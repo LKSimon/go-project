@@ -1,40 +1,32 @@
-# 打包依赖阶段使用golang作为基础镜像
-FROM golang:1.16 as builder
+# 构建阶段
+FROM golang:1.18-alpine AS builder
 
-# 启用go module
-# ENV GO111MODULE=on \
-#     GOPROXY=https://goproxy.cn,direct
+WORKDIR /build
 
-#
-# RUN cd ./demo_server
+COPY . .
 
-WORKDIR /data/app/go-project
+RUN go get
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build main.go
 
-# COPY . .
-COPY ./go-project ./
+# 打包阶段
+FROM alpine:latest
 
-# CGO_ENABLED禁用cgo 然后指定OS等，并go build
-#RUN go mod tidy
-#RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags=jsoniter -o go-project .
+LABEL maintainer="simon"
 
-# 将这些文件放到了publish文件夹
-# RUN mkdir publish && mkdir publish/conf && cp ./go-project publish &&\
-#     cp -r ./conf/app.ini publish/conf
+# 设置永久环境变量, 或 ENV key=value
+ENV WORKDIR /data/app
 
-# 运行阶段指定基础镜像
-FROM centos
+# RUN 设置 Asia/Shanghai 时区
+RUN apk --no-cache add tzdata  && \
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
 
-WORKDIR /data/app/go-project
+# 添加应用可执行文件，并设置执行权限
+COPY --from=builder /build/main  $WORKDIR/main
+RUN chmod +x $WORKDIR/main
 
-# 将上一个阶段publish文件夹下的所有文件复制进来
-COPY --from=builder /data/app/go-project .
+EXPOSE 9999/tcp
 
-#
-# RUN mkdir -p /app/log
+WORKDIR $WORKDIR
 
-# 指定运行时环境变量
-ENV GIN_MODE=debug
-
-EXPOSE 6018
-
-CMD ["./go-project"]
+CMD ["./main"]
